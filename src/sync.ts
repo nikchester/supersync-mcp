@@ -1,12 +1,15 @@
 import {loadCredentials} from './config.js';
 import {openStore,readLimitedJson,validatePage,storePage} from './ingest.js';
-import {project} from './projection.js';import {mkdirSync} from 'node:fs';
+import {project,projectIncremental,type Projection} from './projection.js';import {mkdirSync} from 'node:fs';
 import {openAccountStore,type Account} from './accounts.js';
 import {mergeVectorClocks} from '@sp/sync-core';
 export function createSync(account?:Account){
-let pending:Promise<Awaited<ReturnType<typeof project>>>|undefined;
-let last:Awaited<ReturnType<typeof project>>|undefined;let at=0;
-async function download(db:ReturnType<typeof openStore>,cfg:ReturnType<typeof loadCredentials>){
+let pending:Promise<Projection>|undefined;
+let last:Projection|undefined;let at=0;
+// Projection of the stored log. It survives invalidate(), so a refresh replays
+// only the operations downloaded since, not the whole log.
+let base:Projection|undefined;
+async function download(db:ReturnType<typeof openStore>,cfg:ReturnType<typeof loadCredentials>,from?:Projection){
  let cursor=Number(db.prepare("SELECT value FROM metadata WHERE key='downloadCursor'").get()?.value??0);
  for(let n=0;n<100;n++){
   const url=new URL('/api/sync/ops',cfg.baseUrl);url.searchParams.set('sinceSeq',String(cursor));url.searchParams.set('limit','100');
@@ -19,24 +22,30 @@ async function download(db:ReturnType<typeof openStore>,cfg:ReturnType<typeof lo
    db.prepare("INSERT INTO metadata(key,value) VALUES('snapshotClock',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(clock));
   }
   if(!page.hasMore){
-   const result=await project(db,cfg.encryptionPassword);
+   const started=Date.now();
+   const result=from?await projectIncremental(db,cfg.encryptionPassword,from):{...await project(db,cfg.encryptionPassword),mode:'full' as const};
+   if(result.mode==='full')console.info(JSON.stringify({event:'projection_full',serverSeq:result.serverSeq,ms:Date.now()-started}));
    if(result.serverSeq!==page.latestSeq)throw new Error('PROJECTION_NOT_CURRENT');
-   const snapshotClock=JSON.parse(String(db.prepare("SELECT value FROM metadata WHERE key='snapshotClock'").get()?.value??'{}'));
-   return {...result,clock:mergeVectorClocks(result.clock,snapshotClock)};
+   return {state:result.state,serverSeq:result.serverSeq,clock:result.clock};
   }
   const next=page.ops.at(-1)?.serverSeq;if(!next||next<=cursor)throw new Error('SYNC_NO_PROGRESS');cursor=next;
  }
  throw new Error('SYNC_LIMIT');
 }
+function withSnapshotClock(db:ReturnType<typeof openStore>,result:Projection){
+ const snapshotClock=JSON.parse(String(db.prepare("SELECT value FROM metadata WHERE key='snapshotClock'").get()?.value??'{}'));
+ return {...result,clock:mergeVectorClocks(result.clock,snapshotClock)};
+}
 async function refresh(){
  const cfg=loadCredentials(account?.credentialsPath);const db=account?openAccountStore(account):(mkdirSync('data',{recursive:true,mode:0o700}),openStore('data/operations.sqlite'));
  try{
-  try{return await download(db,cfg);}catch(e){
+  try{base=await download(db,cfg,base);return withSnapshotClock(db,base);}catch(e){
    if(!(e instanceof Error)||!['PROJECTION_LOG_GAP','PROJECTION_SNAPSHOT_REQUIRED','PROJECTION_NOT_CURRENT'].includes(e.message))throw e;
+   base=undefined;
    // A clean download is validated and projected before replacing only the
    // encrypted read cache. Durable write identities and the outbox survive.
    const candidate=openStore(':memory:');
-   try{const result=await download(candidate,cfg);replaceDownloadedCache(db,candidate);return result;}finally{candidate.close();}
+   try{const result=await download(candidate,cfg);replaceDownloadedCache(db,candidate);base=result;return withSnapshotClock(db,result);}finally{candidate.close();}
   }
  }finally{db.close();}
 }
@@ -47,8 +56,14 @@ async function current(force=false){
  if(!pending)pending=refresh().then(v=>{last=v;at=Date.now();return v;}).finally(()=>{pending=undefined;});
  return pending;
 }
+// Builds the projection at startup so the first tool call does not pay for the full replay.
+async function warm(){
+ const started=Date.now();
+ try{const p=await current();console.info(JSON.stringify({event:'warmup_done',serverSeq:p.serverSeq,ms:Date.now()-started}));}
+ catch(e){const reason=e instanceof Error&&/^[A-Z_]+$/.test(e.message)?e.message:'SYNC_FAILED';console.warn(JSON.stringify({event:'warmup_failed',reason}));}
+}
 
-return {current,invalidate};
+return {current,invalidate,warm};
 }
 export function replaceDownloadedCache(db:ReturnType<typeof openStore>,candidate:ReturnType<typeof openStore>){
  db.exec('BEGIN IMMEDIATE');

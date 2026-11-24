@@ -190,6 +190,8 @@ GitHub Actions runs that sequence. Tests use public fixtures and fake HTTP.
 
 The adapter targets the Super Productivity revision in [upstream.json](upstream.json) and schema version 4. It stops on an unknown operation, a new schema, a decryption failure, a gap it cannot repair, or a repair whose cause it cannot check. It does not run browser effects such as GUI notifications or external issue updates. Decrypted state stays in process memory. Run this process only on a host you trust.
 
+The server builds that state once at startup, in the background, by replaying the stored log. Later refreshes download and apply only new operations. A full replay runs again only for a full-state operation (`SYNC_IMPORT`, `BACKUP_IMPORT`, `REPAIR`) or a gap in the log. A tool call made during the startup replay waits for it. The log shows `warmup_done` or `warmup_failed`, and `projection_full` for each full replay.
+
 ## License
 
 MIT. See [LICENSE](LICENSE). Copyright notices on code imported from Super Productivity are kept. Sources are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
