@@ -16,3 +16,4 @@ function runtime(value:Account):Runtime{
 const server=createHttpServer({settings,accessKey,account,runtime});
 server.requestTimeout=30000;server.headersTimeout=10000;
 server.listen(settings.port,settings.listenHost,()=>console.log(`MCP listening on ${settings.listenHost}:${settings.port} (writes ${settings.allowWrites?'enabled':'disabled'})`));
+void runtime(account).sync.warm();
