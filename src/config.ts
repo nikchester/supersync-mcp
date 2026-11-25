@@ -1,5 +1,6 @@
 import {readFileSync,statSync} from 'node:fs';
 import {z} from 'zod';
+import {parsePluginPrefixes} from './plugin-data.js';
 const httpsUrl=z.string().url().refine(value=>{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password&&!u.search&&!u.hash;});
 const schema=z.object({baseUrl:httpsUrl,accessToken:z.string().min(1),encryptionPassword:z.string().min(1)}).strict();
 export function loadCredentials(path='secrets/supersync.json'){
@@ -26,9 +27,12 @@ const serverSchema=z.object({
  dayStartHour:z.coerce.number().int().min(0).max(23),
  changeLogPath:z.string().regex(/^data\/changes\/[A-Za-z0-9._-]+$/),
  changeLogMaxBytes:z.coerce.number().int().min(256).max(32*1024*1024),
+ pluginDataPrefixes:z.array(z.string()),
 });
 export function loadServerConfig(env:NodeJS.ProcessEnv=process.env){
  const allowWrites=flag(env.MCP_ALLOW_WRITES,false);
+ // Prefixes such as "week-planner:" whose synced plugin records the get_plugin_data tool may read. Empty: no such tool.
+ const pluginDataPrefixes=parsePluginPrefixes(env.PLUGIN_DATA_PREFIXES);
  const configured=(env.ALLOWED_HOSTS??'127.0.0.1,localhost').split(',').map(value=>value.trim()).filter(Boolean);
  const parsed=serverSchema.safeParse({
   listenHost:env.LISTEN_HOST??'0.0.0.0',
@@ -41,8 +45,9 @@ export function loadServerConfig(env:NodeJS.ProcessEnv=process.env){
   dayStartHour:env.DAY_START_HOUR===undefined||env.DAY_START_HOUR===''?4:env.DAY_START_HOUR,
   changeLogPath:env.CHANGE_LOG_PATH||'data/changes/changes.jsonl',
   changeLogMaxBytes:env.CHANGE_LOG_MAX_BYTES||1024*1024,
+  pluginDataPrefixes:pluginDataPrefixes??[],
  });
- if(!parsed.success||allowWrites===undefined)throw new Error('SERVER_CONFIG_INVALID');
+ if(!parsed.success||allowWrites===undefined||pluginDataPrefixes===undefined)throw new Error('SERVER_CONFIG_INVALID');
  try{new Intl.DateTimeFormat('en-CA',{timeZone:parsed.data.timeZone});}catch{throw new Error('SERVER_CONFIG_INVALID');}
  return parsed.data;
 }

@@ -57,6 +57,7 @@ cp .env.example .env
 | `CHANGE_LOG_PATH` | `data/changes/changes.jsonl` | Append-only write log. The path must stay under `data/changes/`. |
 | `CHANGE_LOG_MAX_BYTES` | `1048576` | Cap for the current log file. The previous file is kept as `.1`. |
 | `MCP_ALLOW_WRITES` | `false` | Set to `true` only when agents may change tasks. |
+| `PLUGIN_DATA_PREFIXES` | empty | Prefixes such as `week-planner:` whose synced plugin records `get_plugin_data` may read. Empty: the tool is not registered. |
 
 `127.0.0.1` and `localhost` are always allowed, including with the listen port (`127.0.0.1:1901`). Add every other name or address a client will send in `Host`. The check is exact. `tasks.internal` also allows `tasks.internal:1901`.
 

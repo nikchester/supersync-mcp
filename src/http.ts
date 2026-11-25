@@ -55,7 +55,7 @@ export function createHttpServer(options:HttpOptions){
   catch{return;}
   let body:unknown;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{return send(res,400,{error:'invalid_json'});}
   const selected=runtime(account);
-  const mcp=makeServer(selected.sync.current,settings.allowWrites,selected.writer);
+  const mcp=makeServer(selected.sync.current,settings.allowWrites,selected.writer,settings.pluginDataPrefixes);
   const transport=new StreamableHTTPServerTransport({
    sessionIdGenerator:undefined,enableJsonResponse:true,
    enableDnsRebindingProtection:true,allowedHosts:[...allowed],

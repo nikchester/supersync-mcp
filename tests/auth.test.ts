@@ -39,7 +39,7 @@ test('access key is read from a private file or the environment and rejects a sh
 });
 
 function settings(allowWrites:boolean,rateLimitMax=120):ServerConfig{
- return {listenHost:'127.0.0.1',port:1901,allowWrites,allowedHosts:['127.0.0.1','localhost'],rateLimitMax,rateLimitWindowMs:60_000,timeZone:'Europe/Brussels',dayStartHour:4,changeLogPath:'data/changes/changes.jsonl',changeLogMaxBytes:1024*1024};
+ return {listenHost:'127.0.0.1',port:1901,allowWrites,allowedHosts:['127.0.0.1','localhost'],rateLimitMax,rateLimitWindowMs:60_000,timeZone:'Europe/Brussels',dayStartHour:4,changeLogPath:'data/changes/changes.jsonl',changeLogMaxBytes:1024*1024,pluginDataPrefixes:[]};
 }
 
 async function listen(allowWrites:boolean,rateLimitMax=120){

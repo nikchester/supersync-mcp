@@ -105,6 +105,7 @@ docker compose up -d mcp
 | `LISTEN_HOST`, `PORT` | Address and port inside the container. Default `0.0.0.0:1901`. Leave `LISTEN_HOST` at `0.0.0.0` when Docker publishes the port. |
 | `ALLOWED_HOSTS` | `Host` values accepted for DNS-rebinding protection. `127.0.0.1` and `localhost` are always included. |
 | `MCP_ALLOW_WRITES` | Default `false`. Write tools are registered only when this is `true`. |
+| `PLUGIN_DATA_PREFIXES` | Default empty. Comma-separated record prefixes such as `week-planner:`, each ending with a colon. When set, the read-only tool `get_plugin_data` reads the synced plugin records (`pluginUserData`) whose id starts with one of them. Records of other plugins stay hidden. When empty, the tool is not registered. |
 | `TZ` | Timezone for calendar days. Default `Europe/Brussels`. |
 | `DAY_START_HOUR` | Fallback hour for `time_by_day` and `worklog_report` when the account has no start-of-next-day setting. Default `4`. It does not move stored day keys and does not override an account setting. |
 | `CHANGE_LOG_PATH` | Append-only write log. Default `data/changes/changes.jsonl`. The path must stay under `data/changes/`. |
