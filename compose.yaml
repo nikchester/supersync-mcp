@@ -22,6 +22,7 @@ services:
       LISTEN_HOST: "${LISTEN_HOST:-0.0.0.0}"
       PORT: "${PORT:-1901}"
       MCP_ALLOW_WRITES: "${MCP_ALLOW_WRITES:-false}"
+      PLUGIN_DATA_PREFIXES: "${PLUGIN_DATA_PREFIXES:-}"
       ALLOWED_HOSTS: "${ALLOWED_HOSTS:-127.0.0.1,localhost}"
       ACCESS_KEY_FILE: /workspace/secrets/access.key
       RATE_LIMIT_MAX: "${RATE_LIMIT_MAX:-120}"

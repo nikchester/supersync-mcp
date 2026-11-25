@@ -8,6 +8,7 @@ import {worklogReport} from './worklog.js';
 import {McpServer} from '@modelcontextprotocol/sdk/server/mcp.js';
 import {z} from 'zod';import {boardOutput,columnSchema,columnPatchSchema,publicBoard} from './boards.js';import {writeTask,type WriteInput} from './write.js';import {current} from './sync.js';
 import {listChanges} from './change-log.js';
+import {pluginDataPage,prefixAllowed} from './plugin-data.js';
 import {habitBatchFields,registerHabitReadTools,registerHabitWriteTools} from './habit-tools.js';
 function selectFields(value:any,keys:string[]){return Object.fromEntries(keys.filter(k=>Object.hasOwn(value,k)).map(k=>[k,value[k]]));}
 const taskFields=['id','title','notes','isDone','projectId','tagIds','parentId','subTaskIds','timeEstimate','timeSpent','dueDay','dueWithTime','deadlineDay','deadlineWithTime','created','doneOn'];
@@ -25,7 +26,7 @@ const contextOutput=z.object({id:z.string(),title:z.string(),color:z.string().nu
 const serverSeqOutput=z.number().int().min(0);
 const changeLogWarning={changeLogWarning:z.string().optional()};
 const writeOutput={taskId:z.string(),serverSeq:serverSeqOutput,requestId:z.string(),replayed:z.boolean(),...changeLogWarning};
-export function makeServer(provider:typeof current=current,canWrite=false,writer:typeof writeTask=writeTask){
+export function makeServer(provider:typeof current=current,canWrite=false,writer:typeof writeTask=writeTask,pluginPrefixes:readonly string[]=[]){
  // Keep the largest supported 50-column board request valid, but bound work
  // before schema validation (including unknown nested properties).
  const mcp=new McpServer({name:'super-productivity-mcp',version:'0.3.0'},{maxToolInputElements:16_384});
@@ -90,6 +91,17 @@ export function makeServer(provider:typeof current=current,canWrite=false,writer
   try{const p=await provider();const page=listChanges(offset,limit);return output({serverSeq:p.serverSeq,total:page.total,items:page.items});}catch(e){return error(e);}
  });
  registerHabitReadTools(mcp,{provider,output,error,readAnnotations:annotations,serverSeqOutput});
+ // Registered only when the operator lists plugin prefixes in PLUGIN_DATA_PREFIXES. Other plugins' records stay hidden.
+ if(pluginPrefixes.length>0){
+  const pluginRecord=z.object({id:z.string(),parsed:z.boolean(),value:z.any()});
+  mcp.registerTool('get_plugin_data',{description:'Read synced plugin records for the prefixes the operator allows ('+pluginPrefixes.join(', ')+'). Each record has an id like "<plugin>:<key>", parsed (true when the stored string is JSON) and value (the parsed JSON, or null). Pass prefix to narrow the list, for example "week-planner:t_". Records are sorted by id and paged.',inputSchema:{...pageSchema,prefix:z.string().min(1).max(128).optional()},outputSchema:{serverSeq:serverSeqOutput,total:z.number().int().min(0),prefixes:z.array(z.string()),items:z.array(pluginRecord)},annotations},async({offset,limit,prefix})=>{
+   try{
+    if(!prefixAllowed(pluginPrefixes,prefix))return {isError:true,content:[{type:'text' as const,text:'Could not complete the operation. Diagnostic code: PLUGIN_PREFIX_NOT_ALLOWED. Allowed prefixes: '+pluginPrefixes.join(', ')}]};
+    const p=await provider();const page=pluginDataPage(p.state,pluginPrefixes,{prefix,offset,limit});
+    return output({serverSeq:p.serverSeq,total:page.total,prefixes:[...pluginPrefixes],items:page.items});
+   }catch(e){return error(e);}
+  });
+ }
  if(canWrite){
   const base={requestId:z.string().regex(/^[A-Za-z0-9_-]{1,64}$/).describe('Unique id for this operation. After an unknown result, retry with the same id and the same arguments.'),expectedServerSeq:z.number().int().min(0).describe('serverSeq from the latest read. On conflict, read again and retry with a new request id.')};
   const writeAnnotations={readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:false};
