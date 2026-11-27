@@ -3,6 +3,13 @@ import {openStore,readLimitedJson,validatePage,storePage} from './ingest.js';
 import {project,projectIncremental,type Projection} from './projection.js';import {mkdirSync} from 'node:fs';
 import {openAccountStore,type Account} from './accounts.js';
 import {mergeVectorClocks} from '@sp/sync-core';
+// Names why fetch() failed without echoing the URL or headers: the error name and the
+// Node/undici code, such as TimeoutError, UND_ERR_CONNECT_TIMEOUT or ECONNREFUSED.
+export function networkCause(e:unknown){
+ const name=e instanceof Error?e.name:'Error';
+ const code=(e as {cause?:{code?:unknown}})?.cause?.code??(e as {code?:unknown})?.code;
+ return typeof code==='string'&&/^[A-Z0-9_]+$/.test(code)?name+' '+code:name;
+}
 export function createSync(account?:Account){
 let pending:Promise<Projection>|undefined;
 let last:Projection|undefined;let at=0;
@@ -13,8 +20,11 @@ async function download(db:ReturnType<typeof openStore>,cfg:ReturnType<typeof lo
  let cursor=Number(db.prepare("SELECT value FROM metadata WHERE key='downloadCursor'").get()?.value??0);
  for(let n=0;n<100;n++){
   const url=new URL('/api/sync/ops',cfg.baseUrl);url.searchParams.set('sinceSeq',String(cursor));url.searchParams.set('limit','100');
-  const response=await fetch(url,{headers:{Authorization:'Bearer '+cfg.accessToken},redirect:'error',signal:AbortSignal.timeout(30000)});
-  if(!response.ok)throw new Error('SUPERSYNC_UNAVAILABLE');
+  let response:Response;
+  try{response=await fetch(url,{headers:{Authorization:'Bearer '+cfg.accessToken},redirect:'error',signal:AbortSignal.timeout(30000)});}
+  catch(e){console.warn(JSON.stringify({event:'supersync_unreachable',cause:networkCause(e)}));throw new Error('SUPERSYNC_UNAVAILABLE');}
+  if(response.status===401||response.status===403)throw new Error('SUPERSYNC_AUTH_REJECTED');
+  if(!response.ok){console.warn(JSON.stringify({event:'supersync_unavailable',status:response.status}));throw new Error('SUPERSYNC_UNAVAILABLE');}
   const {page}=await validatePage(await readLimitedJson(response),cfg.encryptionPassword);storePage(db,page);
   if(page.snapshotVectorClock){
    const previous=JSON.parse(String(db.prepare("SELECT value FROM metadata WHERE key='snapshotClock'").get()?.value??'{}'));
